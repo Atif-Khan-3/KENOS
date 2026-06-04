@@ -1,2 +1,2 @@
 # Kenos
-Measuring App with 3D Object Scans and Placement
+Measuring App with 3D Object Scans and Placements
