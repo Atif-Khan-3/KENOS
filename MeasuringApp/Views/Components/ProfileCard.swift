@@ -39,7 +39,7 @@ struct ProfileCard: View {
                                selection: $selectedItem,
                                matching: .images
                            ) {
-                               Text("Select Image").foregroundColor(Color.white)
+                               Text(isupdate ? "Edit Photo" : "Upload Photo").foregroundColor(Color.white)
                            }
                            .padding()
                            .buttonStyle(.glassProminent)
@@ -91,5 +91,5 @@ struct ProfileCard: View {
 }
 
 #Preview {
-    ProfileCard(isupdate: true)
+    ProfileCard(isupdate: false)
 }
