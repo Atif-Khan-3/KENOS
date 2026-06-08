@@ -12,6 +12,8 @@ struct ProfileCard: View {
     @State var username:String = ""
     @State private var selectedItem: PhotosPickerItem?
     @State private var selectedImage: UIImage?
+    let manager = UserPreferencesManager.shared
+    @State var checkProfile:Bool = false
     let isupdate:Bool
     var body: some View {
         VStack(alignment: .leading){
@@ -72,7 +74,14 @@ struct ProfileCard: View {
                     .padding(.bottom , 50)
             
                 Button {
-                    //Todo
+                    if !username.isEmpty, let selectedImage = selectedImage{
+                        manager.userName = username
+                        manager.isProfileCreated = true
+                        manager.updateProfileImage(image: selectedImage ?? UIImage())
+                    }else{
+                        checkProfile = true
+                    }
+                    
                 } label: {
                     Text(isupdate ? "Update Profile" : "Create Profile")
                         .padding(8)
@@ -84,9 +93,11 @@ struct ProfileCard: View {
                 .tint(Color.customPurple)
             }.padding()
     //        .background(Color.secondary.opacity(0.1))
-        }.padding(.horizontal)
+        }.padding(.horizontal).alert("All Fields required", isPresented: $checkProfile) {
+            Button("OK", role: .cancel) { }
+        }
         
-       
+      // Text("\(manager.userName ?? "No Name")")
     }
 }
 
