@@ -44,7 +44,6 @@ struct HomeCard: View {
             //.padding()
         }
         .padding(20)
-        .background(Color.customPurple.opacity(0.3))
         .cornerRadius(20)
         .frame(height: 300)
         .frame(maxWidth: 300)
