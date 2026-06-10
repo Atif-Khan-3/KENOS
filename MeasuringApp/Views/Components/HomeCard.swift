@@ -34,8 +34,8 @@ struct HomeCard: View {
             VStack(alignment: .leading){
                 Spacer()
                 Image(systemName: "arkit")
-                    .font(.custom("", size: 40))
-                    .frame(width: 60, height: 60)
+                    .font(.custom("", size: 30))
+                    .frame(width: 50, height: 50)
                     .background(Color.customPurple)
                     .cornerRadius(15)
                     .foregroundStyle(Color.white)
@@ -44,9 +44,10 @@ struct HomeCard: View {
             //.padding()
         }
         .padding(20)
+        .background(Color.customPurple.opacity(0.3))
         .cornerRadius(20)
-        .frame(height: 300)
-        .frame(maxWidth: 300)
+        .frame(height: 250)
+        .frame(maxWidth: 200)
         
     }
 }
