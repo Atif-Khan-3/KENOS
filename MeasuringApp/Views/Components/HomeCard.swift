@@ -23,8 +23,10 @@ struct HomeCard: View {
                 Spacer()
                 HStack{
                     Spacer()
-                    Image(systemName: "person.crop.circle.badge.ellipsis")
-                        .font(.custom("", size: 100))
+                    objectPicture
+                        .resizable()
+                        .scaledToFill()          // 2. Keeps the aspect ratio correct
+                        .frame(width: 120, height: 120) // 3. Constrains it to a specific size
                         .padding(.trailing, -40)
                         .padding(.bottom, -40)
                     

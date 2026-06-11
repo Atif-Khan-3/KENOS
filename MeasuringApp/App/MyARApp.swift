@@ -7,9 +7,7 @@
 
 import UIKit
 import SwiftUI
-
-import SwiftUI
-
+import SwiftData
 @main
 struct MyARApp: App {
     @State private var showSplashScreen = true
@@ -21,6 +19,7 @@ struct MyARApp: App {
                     ProfileCard(isupdate: false)
                 } else {
                     HomeView()
+                        .modelContainer(for: [ScannedObject.self], isAutosaveEnabled: true)
                 }
                 if showSplashScreen {
                     VideoSplashView {
@@ -31,6 +30,8 @@ struct MyARApp: App {
                     }
                     .transition(.opacity) // Fades out smoothly
                     .zIndex(1) // Ensures it stays on top of the app
+                    .modelContainer(for: [ScannedObject.self], isAutosaveEnabled: true)
+
                 }
             }
         }

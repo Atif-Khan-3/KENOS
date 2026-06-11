@@ -6,7 +6,7 @@
 //
 import Foundation
 import SwiftData
-
+import SwiftUI
 @Model
 final class ScannedObject {
     @Attribute(.unique) var id: UUID
@@ -45,5 +45,12 @@ final class ScannedObject {
         guard let path = modelFilePath else { return nil }
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         return documentsDirectory?.appendingPathComponent(path)
+    }
+    @Transient
+    var thumbnailImage: Image? {
+        guard let data = thumbnailData, let uiImage = UIImage(data: data) else {
+            return nil
+        }
+        return Image(uiImage: uiImage)
     }
 }
