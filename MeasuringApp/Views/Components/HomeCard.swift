@@ -15,11 +15,11 @@ struct HomeCard: View {
         ZStack(alignment: .leading){
             VStack(alignment: .leading){
                 Text("\(objectName)")
-                    .font(.title3)
+                    .font(.headline)
                     .bold()
                     .lineLimit(2)
                 Text("\(objectValue)")
-                    .font(.title3)
+                    .font(.subheadline)
                 Spacer()
                 HStack{
                     Spacer()

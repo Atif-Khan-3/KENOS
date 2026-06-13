@@ -1,32 +1,20 @@
-//
-//  HomeView.swift
-//  MeasuringApp
-//
-//  Created by Atif Khan  on 08/06/2026.
-//
 import AVFoundation
 import SwiftUI
-import Foundation
-import _RealityKit_SwiftUI
 import RealityKit
 import SwiftData
+import PhotosUI // 1. Added PhotosUI for modern image picking
+
 struct HomeView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \ScannedObject.scanDate, order: .reverse) private var scannedObjects: [ScannedObject]
-        @Environment(\.modelContext) private var modelContext
-    @Query(sort: \ScannedObject.scanDate, order: .reverse) private var savedScans: [ScannedObject]
-    let items = [
-        (name: "Drawing Room Table", value: "5 x 5 ft"),
-        (name: "Office Chair",       value: "3 x 3 ft"),
-        (name: "Bookshelf",          value: "6 x 2 ft"),
-        (name: "Coffee Table",       value: "4 x 2 ft"),
-        (name: "TV Stand",           value: "5 x 1.5 ft"),
-        (name: "Wardrobe",           value: "7 x 3 ft"),
-    ]
+    
     let columns = [
         GridItem(.flexible(), spacing: 16),
         GridItem(.flexible(), spacing: 16)
     ]
+    
     @ObservedObject private var prefs = UserPreferencesManager.shared
+    
     var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         
@@ -37,28 +25,44 @@ struct HomeView: View {
         default:      return "Good Night"
         }
     }
+    
+    // MARK: - State Variables
     @State private var showCaptureScreen = false
     @State private var showUnsupportedAlert = false
+    
+    // New State for Profile Editing
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var selectedImage: UIImage?
+    @State private var showNameAlert = false
+    @State private var newUserName = ""
+    
+    // Add to State Variables
+    @State private var isSearching = false
+    @State private var searchText = ""
+
+    // Computed filtered list
+    private var filteredObjects: [ScannedObject] {
+        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return scannedObjects
+        }
+        return scannedObjects.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
     private func verifyAndOpenCapture() {
         if #available(iOS 17.0, *) {
-            // 1. Check if hardware is supported
             guard ObjectCaptureSession.isSupported else {
                 showUnsupportedAlert = true
                 return
             }
             
-            // 2. Force iOS to check/request Camera permissions
             AVCaptureDevice.requestAccess(for: .video) { granted in
-                // UI updates must happen on the main thread
                 DispatchQueue.main.async {
                     if granted {
-                        // Permission is granted, safe to open the AR view
                         showCaptureScreen = true
                     } else {
-                        // The user denied it, or iOS blocked it.
                         print("Camera permission was denied.")
-                        // Optional: You could trigger another alert here telling the user
-                        // to open the iOS Settings app to enable camera access.
                     }
                 }
             }
@@ -66,92 +70,122 @@ struct HomeView: View {
             showUnsupportedAlert = true
         }
     }
+    
     var body: some View {
-        VStack{
-//            Color(UIColor.systemBackground)
-//                .ignoresSafeArea()
-//                .fullScreenCover(isPresented: $showCaptureScreen) {
-//                    if #available(iOS 17.0, *) {
-//                        ObjectCaptureContainerView()
-//                    } else {
-//                        Text("Object Capture requires iOS 17 or newer.")
-//                    }
-//                }
-            HStack{
-                if let image = prefs.profileImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 70, height: 70)
-                        .clipShape(Circle())
-                } else {
-                    // Placeholder
-                    Circle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 80, height: 80)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.largeTitle)
-                                .foregroundColor(.gray)
-                        )
-                }
-                VStack(alignment: .leading){
-                    Text("\(greeting)")
-                        .fontWeight(.light)
-                    Text("\(prefs.userName)")
-                    
-                }.padding()
-                Spacer()
-                Button {
-                    //todo
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .scaledToFill()
-                        .frame(width: 40, height: 50)
-                        .cornerRadius(70)
-                    
-                    
-                    
-                }.buttonStyle(.glassProminent)
-                    .tint(Color.customPurple)
-                
-                
-                
-                
-            }.padding(.horizontal)
-                .padding(.top)
-            Spacer()
-            ZStack{
-                ScrollView(showsIndicators: false){
-                    LazyVGrid(columns: columns, spacing: 16){
-                        ForEach(scannedObjects) { object in
-                            HomeCard(
-                                objectName: object.name,
-                                objectValue: String(object.height), // Using the computed property from before
-                                objectPicture: object.thumbnailImage ?? Image(systemName: "cube.box")
+        VStack {
+            // MARK: - Header
+            HStack {
+                // 2. PhotosPicker wraps the image to handle gallery selection automatically
+                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                    if let image = prefs.profileImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 60, height: 60)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 60, height: 60)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.gray)
                             )
-                            
+                    }
+                }
+                // 3. Process the selected image asynchronously
+                .onChange(of: selectedItem) { _, newItem in
+                    guard let newItem else { return }
+                    Task {
+                        if let data = try? await newItem.loadTransferable(type: Data.self),
+                           let uiImage = UIImage(data: data) {
+                            await MainActor.run {
+                                prefs.updateProfileImage(image: uiImage)
+                            }
                         }
                     }
-                }.padding(.horizontal)
-//                
-//                List(savedScans) { scan in
-//                                VStack(alignment: .leading) {
-//                                    Text(scan.name)
-//                                        .font(.headline)
-//                                    Text("Scanned on: \(scan.scanDate.formatted(date: .abbreviated, time: .shortened))")
-//                                        .font(.caption)
-//                                        .foregroundColor(.gray)
-//                                    Text(String(scan.height*3.28084))
-//                                    Text(String(scan.width*3.28084))
-//                                    
-//                                }
-//                            }
-//                            .navigationTitle("My 3D Models")
-               
-                VStack( ){
+                }
+                
+                VStack(alignment: .leading) {
+                    Text("\(greeting)")
+                        .fontWeight(.light)
+                        .font(.subheadline)
+                    
+                    // 4. Wrap the name in a Button to trigger the edit alert
+                    Button {
+                        newUserName = prefs.userName // Pre-fill current name
+                        showNameAlert = true
+                    } label: {
+                        Text("\(prefs.userName)")
+                            .font(.headline)
+                            .foregroundColor(.primary) // Keeps it looking like standard text
+                    }
+                }
+                .padding()
+                
+                Spacer()
+                
+                Button {
+                        withAnimation {
+                            isSearching.toggle()
+                            if !isSearching {
+                                searchText = "" // clear when closing
+                            }
+                        }
+                    } label: {
+                        Image(systemName: isSearching ? "xmark" : "magnifyingglass")
+                            .scaledToFill()
+                            .bold()
+                            .frame(width: 40, height: 50)
+                            .cornerRadius(70)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(Color.customPurple)
+                
+            }
+            .padding(.horizontal)
+            .padding(.top)
+            
+            if isSearching {
+                HStack {
+                    //Image(systemName: "magnifyingglass")
+                        //.foregroundColor(.gray)
+                    TextField("Search by name", text: $searchText)
+                        .padding()
+                        .glassEffect()
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom , 50)
+                        .tint(.customPurple)
+                }
+                .padding(10)
+                //.background(Color.gray.opacity(0.1))
+                //.cornerRadius(10)
+                .padding(.horizontal)
+                //.transition(.move(edge: .top).combined(with: .opacity))
+                .transition(.opacity)
+            }
+            
+            Spacer()
+            
+            // MARK: - Content Grid & FAB
+            ZStack {
+                ScrollView(showsIndicators: false) {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(filteredObjects) { object in
+                            HomeCard(
+                                objectName: object.name,
+                                objectValue: "\(String(object.height))x\(String(object.width))",
+                                objectPicture: object.thumbnailImage ?? Image(systemName: "rotate.3d.fill")
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                
+                VStack {
                     Spacer()
-                    HStack{
+                    HStack {
                         Spacer()
                         Menu {
                             Button {
@@ -163,14 +197,11 @@ struct HomeView: View {
                             Button {
                                 print("Capture Mode selected")
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                        verifyAndOpenCapture()
-                                    }
-                              
+                                    verifyAndOpenCapture()
+                                }
                             } label: {
                                 Label("Capture Mode", systemImage: "arkit")
                             }
-                            
-                            // Destructive/Cancel actions can also be added if needed
                         } label: {
                             Image(systemName: "plus")
                                 .bold()
@@ -181,38 +212,48 @@ struct HomeView: View {
                         .buttonStyle(.glassProminent)
                         .tint(Color.customPurple)
                         .padding(.trailing, 25)
-                    }.padding()
+                    }
+                    .padding()
                 }
-                
             }
-        }.fullScreenCover(isPresented: $showCaptureScreen) {
+        }
+        .fullScreenCover(isPresented: $showCaptureScreen) {
             if #available(iOS 17.0, *) {
-                ObjectCaptureContainerView()          } else {
+                ObjectCaptureContainerView()
+            } else {
                 Text("Object Capture requires iOS 17 or newer.")
                     .padding()
             }
         }
         .onAppear {
-            // 4. Print all values when the view appears
             print("--- Scanned Objects in Database ---")
             for object in scannedObjects {
                 print("ID: \(object.id)")
                 print("Name: \(object.name)")
                 print("Dimensions: \(object.height) x \(object.width)")
-                print("Date: \(object.scanDate)")
-                print("Path: \(object.modelFilePath ?? "None")")
-               // print("Thumbnail: \(object.thumbnailData ?? "None")")
-                print("-----------------------------------")
             }
         }
-        // ✅ REMOVED the .onAppear { verifyAndOpenCapture() } — this was the black screen cause
         .alert("Feature Not Available", isPresented: $showUnsupportedAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Object Capture requires iPhone 12 Pro or newer with iOS 17+.")
         }
+        // 5. The Alert for editing the username
+        .alert("Update Name", isPresented: $showNameAlert) {
+            TextField("Enter your name", text: $newUserName)
+            
+            Button("Save") {
+                let trimmedName = newUserName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedName.isEmpty {
+                    prefs.userName = trimmedName
+                }
+            }
+            
+            Button("Cancel", role: .cancel) {
+                // Do nothing
+            }
+        } message: {
+            Text("How would you like to be greeted?")
+        }
     }
 }
-//#Preview {
-//    HomeView()
-//}
