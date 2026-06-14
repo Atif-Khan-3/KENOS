@@ -35,7 +35,7 @@ struct HomeView: View {
     @State private var selectedImage: UIImage?
     @State private var showNameAlert = false
     @State private var newUserName = ""
-    
+    @State private var isShowingRuler = false
     // Add to State Variables
     @State private var isSearching = false
     @State private var searchText = ""
@@ -189,6 +189,7 @@ struct HomeView: View {
                         Spacer()
                         Menu {
                             Button {
+                                isShowingRuler = true
                                 print("Ruler Mode selected")
                             } label: {
                                 Label("Ruler Mode", systemImage: "ruler")
@@ -224,6 +225,9 @@ struct HomeView: View {
                 Text("Object Capture requires iOS 17 or newer.")
                     .padding()
             }
+        }.fullScreenCover(isPresented: $isShowingRuler) {
+            MeasureViewWrapper()
+                .ignoresSafeArea() // Ensures the camera fills the screen
         }
         .onAppear {
             print("--- Scanned Objects in Database ---")
@@ -255,5 +259,14 @@ struct HomeView: View {
         } message: {
             Text("How would you like to be greeted?")
         }
+    }
+}
+struct MeasureViewWrapper: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> MeasureViewController {
+        return MeasureViewController()
+    }
+    
+    func updateUIViewController(_ uiViewController: MeasureViewController, context: Context) {
+        // Leave empty — no updates needed from SwiftUI to UIKit for now
     }
 }

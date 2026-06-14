@@ -83,11 +83,14 @@ struct ObjectCaptureContainerView: View {
         switch sessionState {
         case .ready:
             Button("Detect Object") { session.startDetecting() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
+                .tint(.customPurple)
+                
 
         case .detecting:
             Button("Start Capture") { session.startCapturing() }
-                .buttonStyle(.borderedProminent).tint(.orange)
+                .buttonStyle(.glassProminent)
+                .tint(.customMint)
 
         case .capturing:
             Button("Finish & Process") {
@@ -107,7 +110,7 @@ struct ObjectCaptureContainerView: View {
                     }
                 }
             }
-            .buttonStyle(.borderedProminent).tint(.green)
+            .buttonStyle(.borderedProminent).tint(.customRed)
 
         default: EmptyView()
         }
@@ -167,10 +170,19 @@ struct ObjectCaptureContainerView: View {
             HStack {
                 Spacer()
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.largeTitle).foregroundColor(.white).padding()
-                }
+                    Image(systemName: "xmark").font(.title2)
+                        .foregroundColor(.white)
+                    
+                        .scaledToFill()
+                        .bold()
+                        .frame(width: 30, height: 40)
+                        .cornerRadius(70)
+                    
+                }.buttonStyle(.glassProminent)
+                    .tint(.customRed)
+                
             }
             Spacer()
-        }
+        }.padding(.horizontal)
     }
 }
