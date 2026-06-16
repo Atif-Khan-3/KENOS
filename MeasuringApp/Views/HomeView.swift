@@ -14,6 +14,7 @@ struct HomeView: View {
     ]
     
     @ObservedObject private var prefs = UserPreferencesManager.shared
+    @State private var selectedObject: ScannedObject? = nil
     
     var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -178,6 +179,9 @@ struct HomeView: View {
                                 objectValue: "\(String(object.height))x\(String(object.width))",
                                 objectPicture: object.thumbnailImage ?? Image(systemName: "rotate.3d.fill")
                             )
+                            .onTapGesture {
+                                selectedObject = object
+                            }
                         }
                     }
                 }
@@ -228,6 +232,10 @@ struct HomeView: View {
         }.fullScreenCover(isPresented: $isShowingRuler) {
             MeasureViewWrapper()
                 .ignoresSafeArea() // Ensures the camera fills the screen
+        }
+        .fullScreenCover(item: $selectedObject) { object in
+            ScannedObjectARView(object: object)
+                .ignoresSafeArea()
         }
         .onAppear {
             print("--- Scanned Objects in Database ---")

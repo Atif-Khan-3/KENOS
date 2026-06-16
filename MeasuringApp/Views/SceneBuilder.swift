@@ -97,16 +97,15 @@ enum SceneBuilder {
 
         return wrapper
     }
-
-    // MARK: - Crosshair ring
+    // makeCrosshairNode() — keep it simple, no constraints needed
     static func makeCrosshairNode() -> SCNNode {
         let ring = SCNTorus(ringRadius: 0.012, pipeRadius: 0.001)
         ring.firstMaterial?.diffuse.contents = UIColor.white.withAlphaComponent(0.8)
         ring.firstMaterial?.lightingModel    = .constant
-        return SCNNode(geometry: ring)
+        return SCNNode(geometry: ring)   // ✅ no eulerAngles, no billboard
     }
 
-    // MARK: - Snap indicator ring (yellow pulse)
+    // makeSnapRingNode() — same, keep pulse animation, remove any constraints
     static func makeSnapRingNode() -> SCNNode {
         let ring = SCNTorus(ringRadius: 0.02, pipeRadius: 0.001)
         ring.firstMaterial?.diffuse.contents = UIColor.yellow.withAlphaComponent(0.9)
@@ -121,6 +120,32 @@ enum SceneBuilder {
         pulse.repeatCount  = .infinity
         node.addAnimation(pulse, forKey: "pulse")
         node.isHidden = true
-        return node
+        return node   // ✅ no eulerAngles, no billboard
     }
+
+//    // MARK: - Crosshair ring
+//    static func makeCrosshairNode() -> SCNNode {
+//        let ring = SCNTorus(ringRadius: 0.012, pipeRadius: 0.001)
+//        ring.firstMaterial?.diffuse.contents = UIColor.white.withAlphaComponent(0.8)
+//        ring.firstMaterial?.lightingModel    = .constant
+//        return SCNNode(geometry: ring)
+//    }
+//
+//    // MARK: - Snap indicator ring (yellow pulse)
+//    static func makeSnapRingNode() -> SCNNode {
+//        let ring = SCNTorus(ringRadius: 0.02, pipeRadius: 0.001)
+//        ring.firstMaterial?.diffuse.contents = UIColor.yellow.withAlphaComponent(0.9)
+//        ring.firstMaterial?.lightingModel    = .constant
+//
+//        let node = SCNNode(geometry: ring)
+//        let pulse = CABasicAnimation(keyPath: "opacity")
+//        pulse.fromValue    = 1.0
+//        pulse.toValue      = 0.2
+//        pulse.duration     = 0.6
+//        pulse.autoreverses = true
+//        pulse.repeatCount  = .infinity
+//        node.addAnimation(pulse, forKey: "pulse")
+//        node.isHidden = true
+//        return node
+//    }
 }

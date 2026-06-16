@@ -1,150 +1,168 @@
 import UIKit
+import SwiftUI
 import ARKit
 import SceneKit
-import SwiftUI
-final class MeasureViewController: UIViewController {
 
+final class MeasureViewController: UIViewController {
+    
     // MARK: - Subviews
     private let sceneView = ARSCNView()
     private let hud       = MeasureHUDHostingController()
-
-    // MARK: - AR / Scene state
+    
+    // MARK: - State
     private let session   = MeasurementSession()
     private var crosshair = SceneBuilder.makeCrosshairNode()
     private var snapRing  = SceneBuilder.makeSnapRingNode()
-    private var labelNodes: [SCNNode] = []
-
-    // Live segment: line + label shown while moving before placing next point
+    
+    // Live preview nodes (line + label from active point → cursor)
     private var liveLineNode:  SCNNode?
     private var liveLabelNode: SCNNode?
-
-    // Last known cursor world position (updated every frame)
+    
+    // Current cursor world position (updated every frame)
     private var cursorPosition: SIMD3<Float>?
-
+    
+    // Current snap state (visual only — updated every frame, consumed on + press)
+    // NOTE: This does NOT activate any point. Activation only happens on + press.
+    private var currentSnap: SnapTarget = .none
+    
     // MARK: - Lifecycle
-
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         setupSceneView()
         setupHUD()
         addPermanentNodes()
+        updateHUD()
     }
-
+    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         let config = ARWorldTrackingConfiguration()
-        config.planeDetection        = [.horizontal, .vertical]
-        config.environmentTexturing  = .automatic
+        config.planeDetection       = [.horizontal, .vertical]
+        config.environmentTexturing = .automatic
         sceneView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
     }
-
+    
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         sceneView.session.pause()
     }
-
+    
     // MARK: - Setup
-
+    
     private func setupSceneView() {
-        sceneView.frame                    = view.bounds
-        sceneView.autoresizingMask         = [.flexibleWidth, .flexibleHeight]
-        sceneView.delegate                 = self
-        sceneView.session.delegate         = self
+        sceneView.frame                      = view.bounds
+        sceneView.autoresizingMask           = [.flexibleWidth, .flexibleHeight]
+        sceneView.delegate                   = self
+        sceneView.session.delegate           = self
         sceneView.autoenablesDefaultLighting = true
-        sceneView.antialiasingMode         = .multisampling4X
+        sceneView.antialiasingMode           = .multisampling4X
         view.addSubview(sceneView)
     }
-
+    
     private func setupHUD() {
         addChild(hud)
         hud.view.translatesAutoresizingMaskIntoConstraints = false
         hud.view.backgroundColor = .clear
         view.addSubview(hud.view)
         hud.didMove(toParent: self)
-
+        
         NSLayoutConstraint.activate([
             hud.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             hud.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            hud.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            hud.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hud.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-
-        // + button places a point at the current cursor position
-        hud.onAdd = { [weak self] in self?.placePointAtCursor() }
-        hud.onUndo  = { [weak self] in self?.undoLastPoint() }
+        
+        hud.onAdd   = { [weak self] in self?.placePoint() }
+        hud.onUndo  = { [weak self] in self?.undoLast() }
         hud.onClear = { [weak self] in self?.clearAll() }
     }
-
+    
     private func addPermanentNodes() {
         sceneView.scene.rootNode.addChildNode(crosshair)
         sceneView.scene.rootNode.addChildNode(snapRing)
+        snapRing.isHidden = true
     }
-
-    // MARK: - Place Point (triggered by + button)
-
-    private func placePointAtCursor() {
-        guard !session.isClosed, let worldPos = cursorPosition else { return }
-
-        // Remove live preview before committing
-        removeLivePreview()
-
-        let dotNode = SceneBuilder.makeDotNode(at: worldPos)
+    
+    // MARK: - Place Point (+ button pressed)
+    //
+    // Apple Measure app flow:
+    //   Press 1 (no active point, empty space)  → place point A, activate A
+    //   Press 2 (active = A, empty space)        → place point B, draw A→B, DESELECT
+    //   Press 3 (no active, snap on point A)     → activate A (no segment yet)
+    //   Press 4 (active = A, empty space)        → place point C, draw A→C, DESELECT
+    //
+    // The session handles all this logic. We just feed it the snap state.
+    
+    private func placePoint() {
+        guard let worldPos = cursorPosition else { return }
+        
+        // Resolve the actual world position from snap or raw cursor
+        let finalPos: SIMD3<Float>
+        switch currentSnap {
+        case .existingPoint(_, let pos):   finalPos = pos
+        case .segmentMidpoint(_, let pos): finalPos = pos
+        case .none:                         finalPos = worldPos
+        }
+        
+        // Create a dot node (may be hidden later if snapping to existing point)
+        let dotNode = SceneBuilder.makeDotNode(at: finalPos)
         sceneView.scene.rootNode.addChildNode(dotNode)
-
-        let point    = MeasurementPoint(worldPosition: worldPos, node: dotNode)
-        let didClose = session.addPoint(point)
-
-        if let (a, b) = didClose ? session.closingSegment() : session.lastSegment() {
-            addFixedSegment(from: a, to: b)
+        let point = MeasurementPoint(worldPosition: finalPos, node: dotNode)
+        
+        // Hand off to session — it decides active state, segment creation, etc.
+        let result = session.addPoint(point, snapTarget: currentSnap)
+        
+        // Hide the dot if we snapped to an already-existing point
+        if case .existingPoint = currentSnap {
+            dotNode.isHidden = true
         }
-
-        let status: String
-        if didClose {
-            snapRing.isHidden = true
-            status = "Shape closed!"
-        } else {
-            status = session.points.count == 1
-                ? "Aim and press + to continue"
-                : "Press + to add point — aim near P1 to close"
+        
+        // Draw permanent line + label if a new segment was created
+        if result.segmentCreated, let seg = session.segments.last {
+            let a    = session.points[seg.indexA].worldPosition
+            let b    = session.points[seg.indexB].worldPosition
+            let dist = MeasurementSession.distance(a, b)
+            
+            let lineNode  = SceneBuilder.makeLineNode(from: a, to: b)
+            let labelNode = SceneBuilder.makeLabelNode(between: a, and: b, distanceMetres: dist)
+            
+            sceneView.scene.rootNode.addChildNode(lineNode)
+            sceneView.scene.rootNode.addChildNode(labelNode)
+            
+            let segIndex = session.segments.count - 1
+            session.registerNodes(lineNode: lineNode, labelNode: labelNode, forSegmentAt: segIndex)
+            
+            // Segment drawn → live preview is irrelevant, clear it
+            removeLivePreview()
         }
-
-        updateHUD(status: status)
+        
+        updateHUD()
     }
-
-    // MARK: - Fixed Segment + Label
-
-    private func addFixedSegment(from a: SIMD3<Float>, to b: SIMD3<Float>) {
-        let lineNode  = SceneBuilder.makeLineNode(from: a, to: b)
-        let dist      = MeasurementSession.distance(a, b)
-        let labelNode = SceneBuilder.makeLabelNode(between: a, and: b, distanceMetres: dist)
-
-        sceneView.scene.rootNode.addChildNode(lineNode)
-        sceneView.scene.rootNode.addChildNode(labelNode)
-
-        session.registerLineNode(lineNode)
-        labelNodes.append(labelNode)
-    }
-
-    // MARK: - Live Preview (line + label from last point → cursor)
-
-    private func updateLivePreview(to cursor: SIMD3<Float>) {
-        guard let last = session.points.last, !session.isClosed else {
+    
+    // MARK: - Live Preview
+    //
+    // Drawn only when there is an active point.
+    // Snap does NOT change the active point — it only affects placePoint().
+    
+    private func updateLivePreview(cursor: SIMD3<Float>) {
+        guard let activeIdx = session.activePointIndex else {
             removeLivePreview()
             return
         }
-
-        let a = last.worldPosition
-        let b = cursor
+        
+        let a    = session.points[activeIdx].worldPosition
+        let b    = cursor
         let dist = MeasurementSession.distance(a, b)
         let mid  = (a + b) * 0.5
-
-        // Rebuild live line
+        
         liveLineNode?.removeFromParentNode()
-        let line = SceneBuilder.makeLineNode(from: a, to: b)
+        let line     = SceneBuilder.makeLineNode(from: a, to: b)
         line.opacity = 0.5
         sceneView.scene.rootNode.addChildNode(line)
         liveLineNode = line
-
-        // Rebuild live label
+        
         liveLabelNode?.removeFromParentNode()
         let label = SceneBuilder.buildLabel(
             text: String(format: "%.2f m", dist),
@@ -153,51 +171,60 @@ final class MeasureViewController: UIViewController {
         sceneView.scene.rootNode.addChildNode(label)
         liveLabelNode = label
     }
-
+    
     private func removeLivePreview() {
         liveLineNode?.removeFromParentNode();  liveLineNode  = nil
         liveLabelNode?.removeFromParentNode(); liveLabelNode = nil
     }
-
+    
     // MARK: - Undo / Clear
-
-    private func undoLastPoint() {
-        let (pointNode, lineNode) = session.undoLast()
-        pointNode?.removeFromParentNode()
-        lineNode?.removeFromParentNode()
-        labelNodes.popLast()?.removeFromParentNode()
+    
+    private func undoLast() {
+        let result = session.undoLastSegment()
+        result.lineNode?.removeFromParentNode()
+        result.labelNode?.removeFromParentNode()
+        result.orphanPoint?.removeFromParentNode()
         removeLivePreview()
-
-        let status = session.points.isEmpty
-            ? "Press + to place first point"
-            : "Point removed"
-        updateHUD(status: status)
+        updateHUD()
     }
-
+    
     private func clearAll() {
         session.clear().forEach { $0.removeFromParentNode() }
-        labelNodes.forEach { $0.removeFromParentNode() }
-        labelNodes.removeAll()
-        snapRing.isHidden = true
         removeLivePreview()
-        updateHUD(status: "Press + to place first point")
+        snapRing.isHidden = true
+        updateHUD()
     }
-
+    
     // MARK: - HUD
-
-    private func updateHUD(status: String) {
-        hud.update(pointCount: session.points.count, status: status)
+    
+    private func updateHUD() {
+        let count  = session.points.count
+        let active = session.activePointIndex
+        
+        let status: String
+        if count == 0 {
+            status = "Press + to place first point"
+        } else if active == nil && count > 0 {
+            // Drawing stopped — guide user to either start fresh or re-use a point
+            status = "Aim at a point and press + to continue"
+        } else if active != nil && count == 1 {
+            status = "Aim and press + for second point"
+        } else {
+            status = "Press + to add — aim at a point to connect"
+        }
+        
+        hud.update(pointCount: count, status: status)
     }
-
+    
     // MARK: - Raycasting
-
+    
     private func raycast(from point: CGPoint) -> SIMD3<Float>? {
         guard let query = sceneView.raycastQuery(
             from: point,
             allowing: .estimatedPlane,
             alignment: .any
         ) else { return nil }
-
+        
         return sceneView.session.raycast(query).first.map {
             SIMD3<Float>(
                 $0.worldTransform.columns.3.x,
@@ -206,55 +233,126 @@ final class MeasureViewController: UIViewController {
             )
         }
     }
-
-    // MARK: - Per-frame update (cursor + live preview)
-
+    
+    
+    private func raycastResult(from point: CGPoint) -> ARRaycastResult? {
+        guard let query = sceneView.raycastQuery(
+            from: point,
+            allowing: .estimatedPlane,
+            alignment: .any
+        ) else { return nil }
+        return sceneView.session.raycast(query).first
+    }
+    
+    
+    // MARK: - Per-frame update
     private func updateFrame() {
         let center = CGPoint(x: sceneView.bounds.midX, y: sceneView.bounds.midY)
-        guard let worldPos = raycast(from: center) else {
+        guard let result = raycastResult(from: center) else {
             crosshair.isHidden = true
-            cursorPosition = nil
+            cursorPosition     = nil
+            currentSnap        = .none
+            snapRing.isHidden  = true
+            removeLivePreview()
             return
         }
-
-        cursorPosition         = worldPos
-        crosshair.isHidden     = false
-        crosshair.position     = SCNVector3(worldPos)
-
-        // Live preview line + label
-        updateLivePreview(to: worldPos)
-
-        // Snap ring
-        if session.points.count >= 3, let first = session.points.first {
-            let d = simd_distance(worldPos, first.worldPosition)
-            snapRing.isHidden = d > MeasurementSession.snapRadiusMetres
-            if !snapRing.isHidden {
-                snapRing.position = SCNVector3(first.worldPosition)
-            }
-        } else {
+        
+        let transform = result.worldTransform
+        let worldPos  = SIMD3<Float>(
+            transform.columns.3.x,
+            transform.columns.3.y,
+            transform.columns.3.z
+        )
+        
+        // Surface normal from the raycast transform (column 2 = Z axis = forward)
+        let normal = SIMD3<Float>(
+            transform.columns.2.x,
+            transform.columns.2.y,
+            transform.columns.2.z
+        )
+        
+        cursorPosition     = worldPos
+        crosshair.isHidden = false
+        crosshair.simdPosition = worldPos
+        crosshair.simdLook(at: worldPos + normal)   // ✅ aligns to surface
+        
+        currentSnap = session.snapTarget(for: worldPos)
+        
+        switch currentSnap {
+        case .existingPoint(_, let pos):
+            snapRing.isHidden = false
+            snapRing.simdPosition = pos
+            snapRing.simdLook(at: pos + normal)     // ✅ aligns to surface
+        case .segmentMidpoint(_, let pos):
+            snapRing.isHidden = false
+            snapRing.simdPosition = pos
+            snapRing.simdLook(at: pos + normal)     // ✅ aligns to surface
+        case .none:
             snapRing.isHidden = true
         }
+        
+        updateLivePreview(cursor: worldPos)
     }
 }
-
-// MARK: - ARSCNViewDelegate
-
-extension MeasureViewController: ARSCNViewDelegate {
-    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-        DispatchQueue.main.async { [weak self] in self?.updateFrame() }
+    
+    //    private func updateFrame() {
+    //        let center = CGPoint(x: sceneView.bounds.midX, y: sceneView.bounds.midY)
+    //        guard let worldPos = raycast(from: center) else {
+    //            crosshair.isHidden = true
+    //            cursorPosition     = nil
+    //            currentSnap        = .none
+    //            snapRing.isHidden  = true
+    //            removeLivePreview()
+    //            return
+    //        }
+    //
+    //        cursorPosition     = worldPos
+    //        crosshair.isHidden = false
+    //        crosshair.position = SCNVector3(worldPos)
+    //
+    //        // Evaluate snap — VISUAL ONLY.
+    //        // This does NOT activate any point; activation only happens on + press.
+    //        currentSnap = session.snapTarget(for: worldPos)
+    //
+    //        // Show/hide the snap ring based on whether cursor is near something snappable
+    //        switch currentSnap {
+    //        case .existingPoint(_, let pos):
+    //            snapRing.isHidden = false
+    //            snapRing.position = SCNVector3(pos)
+    //        case .segmentMidpoint(_, let pos):
+    //            snapRing.isHidden = false
+    //            snapRing.position = SCNVector3(pos)
+    //        case .none:
+    //            snapRing.isHidden = true
+    //        }
+    //
+    //        // Live preview from the currently active point (if any) → cursor
+    //        updateLivePreview(cursor: worldPos)
+    //    }
+    //}
+    
+    // MARK: - ARSCNViewDelegate
+    
+    extension MeasureViewController: ARSCNViewDelegate {
+        func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+            DispatchQueue.main.async { [weak self] in self?.updateFrame() }
+        }
     }
-}
+    
+    // MARK: - ARSessionDelegate
+    
+    extension MeasureViewController: ARSessionDelegate {
+        func session(_ session: ARSession, didFailWithError error: Error) {
+            hud.update(
+                pointCount: session.currentFrame?.anchors.count ?? 0,
+                status: "AR Error: \(error.localizedDescription)"
+            )
+        }
+        func sessionWasInterrupted(_ session: ARSession) {
+            hud.update(pointCount: 0, status: "Session interrupted")
+        }
+        func sessionInterruptionEnded(_ session: ARSession) {
+            hud.update(pointCount: 0, status: "Move device to re-detect surfaces")
+        }
+    }
 
-// MARK: - ARSessionDelegate
-
-extension MeasureViewController: ARSessionDelegate {
-    func session(_ session: ARSession, didFailWithError error: Error) {
-        updateHUD(status: "AR Error: \(error.localizedDescription)")
-    }
-    func sessionWasInterrupted(_ session: ARSession) {
-        updateHUD(status: "Session interrupted")
-    }
-    func sessionInterruptionEnded(_ session: ARSession) {
-        updateHUD(status: "Session resumed — move to re-detect")
-    }
-}
