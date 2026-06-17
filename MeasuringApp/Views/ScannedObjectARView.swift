@@ -70,7 +70,7 @@ final class ScannedObjectARViewController: UIViewController, ARSessionDelegate {
     private var hasPlacedModel = false
 
     // Gesture state
-    private var initialScale: SIMD3<Float> = .one
+   // private var initialScale: SIMD3<Float> = .one
     private var initialRotation: Float = 0
     private var panStartPosition: SIMD3<Float> = .zero
 
@@ -211,15 +211,15 @@ final class ScannedObjectARViewController: UIViewController, ARSessionDelegate {
         pan.maximumNumberOfTouches = 1  // ← 1 finger only, so pinch (2 fingers) won't trigger pan
         arView.addGestureRecognizer(pan)
 
-        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        arView.addGestureRecognizer(pinch)
+//        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+//        arView.addGestureRecognizer(pinch)
 
         let rotation = UIRotationGestureRecognizer(target: self, action: #selector(handleRotation(_:)))
         arView.addGestureRecognizer(rotation)
 
         tap.delegate = self
         pan.delegate = self
-        pinch.delegate = self
+     //   pinch.delegate = self
         rotation.delegate = self
     }
 
@@ -246,7 +246,7 @@ final class ScannedObjectARViewController: UIViewController, ARSessionDelegate {
 
         guard let result = arView.raycast(
             from: location,
-            allowing: .estimatedPlane,
+            allowing: .existingPlaneGeometry,
             alignment: .horizontal
         ).first else { return }
 
@@ -267,24 +267,24 @@ final class ScannedObjectARViewController: UIViewController, ARSessionDelegate {
         }
     }
 
-    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        guard hasPlacedModel, let entity = modelEntity else { return }
-
-        switch gesture.state {
-        case .began:
-            initialScale = entity.scale
-            gesture.scale = 1.0
-        case .changed:
-            let newScale = initialScale.x * Float(gesture.scale)
-            let clamped = max(0.05, min(newScale, 10.0))
-            entity.scale = SIMD3<Float>(repeating: clamped)
-            print("📐 Scale: \(clamped)") // ← add this to verify it's firing
-        case .ended, .cancelled:
-            initialScale = entity.scale // ← save final scale so next pinch starts fresh
-        default:
-            break
-        }
-    }
+//    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+//        guard hasPlacedModel, let entity = modelEntity else { return }
+//
+//        switch gesture.state {
+//        case .began:
+//            initialScale = entity.scale
+//            gesture.scale = 1.0
+//        case .changed:
+//            let newScale = initialScale.x * Float(gesture.scale)
+//            let clamped = max(0.05, min(newScale, 10.0))
+//            entity.scale = SIMD3<Float>(repeating: clamped)
+//            print("📐 Scale: \(clamped)") // ← add this to verify it's firing
+//        case .ended, .cancelled:
+//            initialScale = entity.scale // ← save final scale so next pinch starts fresh
+//        default:
+//            break
+//        }
+//    }
 
     @objc private func handleRotation(_ gesture: UIRotationGestureRecognizer) {
         guard hasPlacedModel, let entity = modelEntity else { return }
@@ -317,6 +317,7 @@ final class ScannedObjectARViewController: UIViewController, ARSessionDelegate {
                     )
                     let anchor = AnchorEntity(world: position)
                     entity.generateCollisionShapes(recursive: true)
+                   // entity.scale = SIMD3<Float>(repeating: 1.0)
                     anchor.addChild(entity)
                     arView.scene.addAnchor(anchor)
 
@@ -367,19 +368,27 @@ extension ScannedObjectARViewController: UIGestureRecognizerDelegate {
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
     ) -> Bool {
-        // Allow pinch + rotation simultaneously (common pattern)
-        let isPinch = gestureRecognizer is UIPinchGestureRecognizer || other is UIPinchGestureRecognizer
-        let isRotation = gestureRecognizer is UIRotationGestureRecognizer || other is UIRotationGestureRecognizer
         let isPan = gestureRecognizer is UIPanGestureRecognizer || other is UIPanGestureRecognizer
-
-        // Pinch + Rotation: YES
-        if isPinch && isRotation { return true }
-
-        // Pan + anything else: NO (pan should be exclusive)
         if isPan { return false }
-
-        return false
+        return true
     }
+//    func gestureRecognizer(
+//        _ gestureRecognizer: UIGestureRecognizer,
+//        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+//    ) -> Bool {
+//        // Allow pinch + rotation simultaneously (common pattern)
+//        let isPinch = gestureRecognizer is UIPinchGestureRecognizer || other is UIPinchGestureRecognizer
+//        let isRotation = gestureRecognizer is UIRotationGestureRecognizer || other is UIRotationGestureRecognizer
+//        let isPan = gestureRecognizer is UIPanGestureRecognizer || other is UIPanGestureRecognizer
+//
+//        // Pinch + Rotation: YES
+//        if isPinch && isRotation { return true }
+//
+//        // Pan + anything else: NO (pan should be exclusive)
+//        if isPan { return false }
+//
+//        return false
+//    }
 }
 
 // MARK: - Bottom HUD SwiftUI View
