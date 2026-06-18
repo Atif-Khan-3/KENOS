@@ -24,6 +24,10 @@ final class MeasureViewController: UIViewController {
     // Current snap state (visual only — updated every frame, consumed on + press)
     // NOTE: This does NOT activate any point. Activation only happens on + press.
     private var currentSnap: SnapTarget = .none
+
+    // Currently selected display unit. Always starts at meters when the
+    // screen opens — intentionally not persisted between sessions.
+    private var currentUnit: MeasurementUnit = .meters
     
     // MARK: - Lifecycle
     
@@ -74,9 +78,10 @@ final class MeasureViewController: UIViewController {
             hud.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
-        hud.onAdd   = { [weak self] in self?.placePoint() }
-        hud.onUndo  = { [weak self] in self?.undoLast() }
-        hud.onClear = { [weak self] in self?.clearAll() }
+        hud.onAdd        = { [weak self] in self?.placePoint() }
+        hud.onUndo       = { [weak self] in self?.undoLast() }
+        hud.onClear      = { [weak self] in self?.clearAll() }
+        hud.onUnitChange = { [weak self] unit in self?.changeUnit(to: unit) }
     }
     
     private func addPermanentNodes() {
@@ -84,16 +89,6 @@ final class MeasureViewController: UIViewController {
         sceneView.scene.rootNode.addChildNode(snapRing)
         snapRing.isHidden = true
     }
-    
-    // MARK: - Place Point (+ button pressed)
-    //
-    // Apple Measure app flow:
-    //   Press 1 (no active point, empty space)  → place point A, activate A
-    //   Press 2 (active = A, empty space)        → place point B, draw A→B, DESELECT
-    //   Press 3 (no active, snap on point A)     → activate A (no segment yet)
-    //   Press 4 (active = A, empty space)        → place point C, draw A→C, DESELECT
-    //
-    // The session handles all this logic. We just feed it the snap state.
     
     private func placePoint() {
         guard let worldPos = cursorPosition else { return }
@@ -126,7 +121,7 @@ final class MeasureViewController: UIViewController {
             let dist = MeasurementSession.distance(a, b)
             
             let lineNode  = SceneBuilder.makeLineNode(from: a, to: b)
-            let labelNode = SceneBuilder.makeLabelNode(between: a, and: b, distanceMetres: dist)
+            let labelNode = SceneBuilder.makeLabelNode(between: a, and: b, distanceMetres: dist, unit: currentUnit)
             
             sceneView.scene.rootNode.addChildNode(lineNode)
             sceneView.scene.rootNode.addChildNode(labelNode)
@@ -165,7 +160,7 @@ final class MeasureViewController: UIViewController {
         
         liveLabelNode?.removeFromParentNode()
         let label = SceneBuilder.buildLabel(
-            text: String(format: "%.2f m", dist),
+            text: currentUnit.format(metres: dist),
             midpoint: mid
         )
         sceneView.scene.rootNode.addChildNode(label)
@@ -193,6 +188,32 @@ final class MeasureViewController: UIViewController {
         removeLivePreview()
         snapRing.isHidden = true
         updateHUD()
+    }
+
+    // MARK: - Unit Change
+    //
+    // Fired when the user picks a new unit from the HUD's unit pill.
+    // Re-labels every existing segment in place so old + new measurements
+    // are always shown in the same, currently-selected unit.
+
+    private func changeUnit(to unit: MeasurementUnit) {
+        currentUnit = unit
+        relabelAllSegments()
+        hud.updateUnit(unit)
+    }
+
+    private func relabelAllSegments() {
+        for (index, seg) in session.segments.enumerated() {
+            seg.labelNode?.removeFromParentNode()
+
+            let a    = session.points[seg.indexA].worldPosition
+            let b    = session.points[seg.indexB].worldPosition
+            let dist = MeasurementSession.distance(a, b)
+
+            let newLabel = SceneBuilder.makeLabelNode(between: a, and: b, distanceMetres: dist, unit: currentUnit)
+            sceneView.scene.rootNode.addChildNode(newLabel)
+            session.updateLabelNode(newLabel, forSegmentAt: index)
+        }
     }
     
     // MARK: - HUD
@@ -294,65 +315,28 @@ final class MeasureViewController: UIViewController {
         updateLivePreview(cursor: worldPos)
     }
 }
-    
-    //    private func updateFrame() {
-    //        let center = CGPoint(x: sceneView.bounds.midX, y: sceneView.bounds.midY)
-    //        guard let worldPos = raycast(from: center) else {
-    //            crosshair.isHidden = true
-    //            cursorPosition     = nil
-    //            currentSnap        = .none
-    //            snapRing.isHidden  = true
-    //            removeLivePreview()
-    //            return
-    //        }
-    //
-    //        cursorPosition     = worldPos
-    //        crosshair.isHidden = false
-    //        crosshair.position = SCNVector3(worldPos)
-    //
-    //        // Evaluate snap — VISUAL ONLY.
-    //        // This does NOT activate any point; activation only happens on + press.
-    //        currentSnap = session.snapTarget(for: worldPos)
-    //
-    //        // Show/hide the snap ring based on whether cursor is near something snappable
-    //        switch currentSnap {
-    //        case .existingPoint(_, let pos):
-    //            snapRing.isHidden = false
-    //            snapRing.position = SCNVector3(pos)
-    //        case .segmentMidpoint(_, let pos):
-    //            snapRing.isHidden = false
-    //            snapRing.position = SCNVector3(pos)
-    //        case .none:
-    //            snapRing.isHidden = true
-    //        }
-    //
-    //        // Live preview from the currently active point (if any) → cursor
-    //        updateLivePreview(cursor: worldPos)
-    //    }
-    //}
-    
-    // MARK: - ARSCNViewDelegate
-    
-    extension MeasureViewController: ARSCNViewDelegate {
-        func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-            DispatchQueue.main.async { [weak self] in self?.updateFrame() }
-        }
-    }
-    
-    // MARK: - ARSessionDelegate
-    
-    extension MeasureViewController: ARSessionDelegate {
-        func session(_ session: ARSession, didFailWithError error: Error) {
-            hud.update(
-                pointCount: session.currentFrame?.anchors.count ?? 0,
-                status: "AR Error: \(error.localizedDescription)"
-            )
-        }
-        func sessionWasInterrupted(_ session: ARSession) {
-            hud.update(pointCount: 0, status: "Session interrupted")
-        }
-        func sessionInterruptionEnded(_ session: ARSession) {
-            hud.update(pointCount: 0, status: "Move device to re-detect surfaces")
-        }
-    }
 
+// MARK: - ARSCNViewDelegate
+
+extension MeasureViewController: ARSCNViewDelegate {
+    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        DispatchQueue.main.async { [weak self] in self?.updateFrame() }
+    }
+}
+
+// MARK: - ARSessionDelegate
+
+extension MeasureViewController: ARSessionDelegate {
+    func session(_ session: ARSession, didFailWithError error: Error) {
+        hud.update(
+            pointCount: session.currentFrame?.anchors.count ?? 0,
+            status: "AR Error: \(error.localizedDescription)"
+        )
+    }
+    func sessionWasInterrupted(_ session: ARSession) {
+        hud.update(pointCount: 0, status: "Session interrupted")
+    }
+    func sessionInterruptionEnded(_ session: ARSession) {
+        hud.update(pointCount: 0, status: "Move device to re-detect surfaces")
+    }
+}

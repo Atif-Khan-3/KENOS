@@ -55,18 +55,19 @@ enum SceneBuilder {
     static func makeLabelNode(
         between a: SIMD3<Float>,
         and b: SIMD3<Float>,
-        distanceMetres: Float
+        distanceMetres: Float,
+        unit: MeasurementUnit
     ) -> SCNNode {
         return buildLabel(
-            text: String(format: "%.2f m", distanceMetres),
+            text: unit.format(metres: distanceMetres),
             midpoint: (a + b) * 0.5
         )
     }
 
     // MARK: - Live Label Node (updated every frame)
     // Returns a node whose SCNText geometry you can mutate directly.
-    static func makeLiveLabelNode(at midpoint: SIMD3<Float>) -> SCNNode {
-        return buildLabel(text: "0.00 m", midpoint: midpoint)
+    static func makeLiveLabelNode(at midpoint: SIMD3<Float>, unit: MeasurementUnit = .meters) -> SCNNode {
+        return buildLabel(text: unit.format(metres: 0), midpoint: midpoint)
     }
 
     // MARK: - Shared label builder
@@ -97,15 +98,16 @@ enum SceneBuilder {
 
         return wrapper
     }
-    // makeCrosshairNode() — keep it simple, no constraints needed
+
+    // MARK: - Crosshair ring
     static func makeCrosshairNode() -> SCNNode {
         let ring = SCNTorus(ringRadius: 0.012, pipeRadius: 0.001)
         ring.firstMaterial?.diffuse.contents = UIColor.white.withAlphaComponent(0.8)
         ring.firstMaterial?.lightingModel    = .constant
-        return SCNNode(geometry: ring)   // ✅ no eulerAngles, no billboard
+        return SCNNode(geometry: ring)
     }
 
-    // makeSnapRingNode() — same, keep pulse animation, remove any constraints
+    // MARK: - Snap indicator ring (yellow pulse)
     static func makeSnapRingNode() -> SCNNode {
         let ring = SCNTorus(ringRadius: 0.02, pipeRadius: 0.001)
         ring.firstMaterial?.diffuse.contents = UIColor.yellow.withAlphaComponent(0.9)
@@ -120,32 +122,6 @@ enum SceneBuilder {
         pulse.repeatCount  = .infinity
         node.addAnimation(pulse, forKey: "pulse")
         node.isHidden = true
-        return node   // ✅ no eulerAngles, no billboard
+        return node
     }
-
-//    // MARK: - Crosshair ring
-//    static func makeCrosshairNode() -> SCNNode {
-//        let ring = SCNTorus(ringRadius: 0.012, pipeRadius: 0.001)
-//        ring.firstMaterial?.diffuse.contents = UIColor.white.withAlphaComponent(0.8)
-//        ring.firstMaterial?.lightingModel    = .constant
-//        return SCNNode(geometry: ring)
-//    }
-//
-//    // MARK: - Snap indicator ring (yellow pulse)
-//    static func makeSnapRingNode() -> SCNNode {
-//        let ring = SCNTorus(ringRadius: 0.02, pipeRadius: 0.001)
-//        ring.firstMaterial?.diffuse.contents = UIColor.yellow.withAlphaComponent(0.9)
-//        ring.firstMaterial?.lightingModel    = .constant
-//
-//        let node = SCNNode(geometry: ring)
-//        let pulse = CABasicAnimation(keyPath: "opacity")
-//        pulse.fromValue    = 1.0
-//        pulse.toValue      = 0.2
-//        pulse.duration     = 0.6
-//        pulse.autoreverses = true
-//        pulse.repeatCount  = .infinity
-//        node.addAnimation(pulse, forKey: "pulse")
-//        node.isHidden = true
-//        return node
-//    }
 }
