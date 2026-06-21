@@ -8,10 +8,10 @@ struct BoundingBox {
     let width:  Float
     let height: Float
 
-    func formatted() -> (l: String, w: String, h: String) {
-        (l: String(format: "%.2f m", length),
-         w: String(format: "%.2f m", width),
-         h: String(format: "%.2f m", height))
+    func formatted(unit: MeasurementUnit = .meters) -> (l: String, w: String, h: String) {
+        (l: unit.format(metres: length),
+         w: unit.format(metres: width),
+         h: unit.format(metres: height))
     }
 }
 
@@ -153,6 +153,13 @@ final class MeasurementSession {
     func registerNodes(lineNode: SCNNode, labelNode: SCNNode, forSegmentAt index: Int) {
         guard index < segments.count else { return }
         segments[index].lineNode  = lineNode
+        segments[index].labelNode = labelNode
+    }
+
+    // MARK: - Update just the label node (used when the user changes units)
+
+    func updateLabelNode(_ labelNode: SCNNode, forSegmentAt index: Int) {
+        guard index < segments.count else { return }
         segments[index].labelNode = labelNode
     }
 

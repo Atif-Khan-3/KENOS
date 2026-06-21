@@ -72,6 +72,11 @@ struct HomeView: View {
         }
     }
     
+    private func formatMetersToInchesString(meters: Double) -> String {
+        let inches = meters * 39.3701
+        return String(format: "%.2fin", inches)
+    }
+    
     var body: some View {
         VStack {
             // MARK: - Header
@@ -176,7 +181,7 @@ struct HomeView: View {
                         ForEach(filteredObjects) { object in
                             HomeCard(
                                 objectName: object.name,
-                                objectValue: "\(String(object.height))x\(String(object.width))",
+                                objectValue: "\(formatMetersToInchesString(meters: object.width))x\(formatMetersToInchesString(meters: object.height))",
                                 objectPicture: object.thumbnailImage ?? Image(systemName: "rotate.3d.fill")
                             )
                             .onTapGesture {

@@ -1,24 +1,14 @@
 import SwiftUI
 
-// MARK: - MeasureHUDView  (matches Apple Measure app UI)
-//
-// Layout (bottom of screen, safe-area aware):
-//
-//   [status text — centred above buttons]
-//
-//   [ Undo (white bg / red icon) ]   [ + (large white circle) ]   [ Delete (red bg / trash icon) ]
-//
-//   ─────────────────────────────────────────────────────────────
-//   |  ▥  Measure   |   ⊟  Level  |        ← tab bar
-//   ─────────────────────────────────────────────────────────────
-
 struct MeasureHUDView: View {
 
     let pointCount:    Int
     let status:        String
+    let currentUnit:   MeasurementUnit
     var onAdd:         () -> Void
     var onUndo:        () -> Void
     var onClear:       () -> Void
+    var onUnitChange:  (MeasurementUnit) -> Void
 
     // Tab state (Measure is always selected in this VC; Level is a stub)
     @State private var selectedTab: Int = 0
@@ -39,16 +29,13 @@ struct MeasureHUDView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 14)
 
-                // ── Three action buttons ──────────────────────────────────────
+                // ── Three action buttons
+                
                 HStack(alignment: .center) {
 
                     // Undo — white background, red SF Symbol icon
                     Button(action: onUndo) {
                         ZStack {
-    //                        Circle()
-    //                            .fill(Color.white)
-    //                            .frame(width: 56, height: 56)
-    //                            .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
 
                             Image(systemName: "arrow.uturn.backward")
                                 .font(.system(size: 20, weight: .semibold))
@@ -69,19 +56,12 @@ struct MeasureHUDView: View {
                     // + (Add Point) — large white circle, black +
                     Button(action: onAdd) {
                         ZStack {
-    //                        Circle()
-    //                            .fill(Color.white)
-    //                            .frame(width: 72, height: 72)
-    //                            .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 3)
-
                             Image(systemName: "plus")
                                 .font(.system(size: 30, weight: .bold))
                                 .frame(width: 60, height: 70)
                                 .cornerRadius(50)
                                 .foregroundColor(.white)
                         }
-                        
-                        
                     }
                     .buttonStyle(.glassProminent)
                     .tint(.customPurple)
@@ -90,15 +70,6 @@ struct MeasureHUDView: View {
                     // Delete / Clear — red background, white trash icon
                     Button(action: onClear) {
                         ZStack {
-    //                        Circle()
-    //                            .fill(
-    //                                pointCount > 0
-    //                                    ? Color(red: 1, green: 0.18, blue: 0.18)
-    //                                    : Color(red: 1, green: 0.18, blue: 0.18).opacity(0.35)
-    //                            )
-    //                            .frame(width: 56, height: 56)
-    //                            .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
-
                             Image(systemName: "trash")
                                 .font(.system(size: 20, weight: .semibold))
                                 .frame(width: 40, height: 50)
@@ -120,7 +91,9 @@ struct MeasureHUDView: View {
             .padding(.top, 12)
             .padding(.bottom, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-           dismissButton
+
+            dismissButton
+            unitPill
         }
           // safe area padding is added by the parent constraint
     }
@@ -140,6 +113,37 @@ struct MeasureHUDView: View {
             .padding(.top, 16)
             .padding(.trailing, 20)
         }
+
+    // ── Unit picker pill — top-leading corner ───────────────────────────────
+    private var unitPill: some View {
+        Menu {
+            ForEach(MeasurementUnit.allCases) { unit in
+                Button {
+                    onUnitChange(unit)
+                } label: {
+                    if unit == currentUnit {
+                        Label(unit.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(unit.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(currentUnit.symbol)
+                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .foregroundColor(.black.opacity(0.85))
+            .frame(width: 54, height: 36)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(.white)
+        .padding(.top, 16)
+        .padding(.leading, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
     
     // ── Tab button helper ─────────────────────────────────────────────────
     @ViewBuilder
@@ -165,34 +169,51 @@ struct MeasureHUDView: View {
 
 final class MeasureHUDHostingController: UIHostingController<MeasureHUDView> {
 
-    var onAdd:   (() -> Void)?
-    var onUndo:  (() -> Void)?
-    var onClear: (() -> Void)?
+    var onAdd:        (() -> Void)?
+    var onUndo:       (() -> Void)?
+    var onClear:      (() -> Void)?
+    var onUnitChange: ((MeasurementUnit) -> Void)?
+
+    private var currentPointCount = 0
+    private var currentStatus     = "Move iPhone to detect surfaces"
+    private var currentUnit: MeasurementUnit = .meters
 
     init() {
         super.init(rootView: MeasureHUDView(
-            pointCount: 0,
-            status:     "Move iPhone to detect surfaces",
-            onAdd:  {},
-            onUndo: {},
-            onClear: {}
+            pointCount:   0,
+            status:       "Move iPhone to detect surfaces",
+            currentUnit:  .meters,
+            onAdd:        {},
+            onUndo:       {},
+            onClear:      {},
+            onUnitChange: { _ in }
         ))
-        refresh(pointCount: 0, status: "Move iPhone to detect surfaces")
+        refresh()
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
 
     func update(pointCount: Int, status: String) {
-        refresh(pointCount: pointCount, status: status)
+        currentPointCount = pointCount
+        currentStatus     = status
+        refresh()
     }
 
-    private func refresh(pointCount: Int, status: String) {
+    /// Call this when the user picks a new unit from the pill menu.
+    func updateUnit(_ unit: MeasurementUnit) {
+        currentUnit = unit
+        refresh()
+    }
+
+    private func refresh() {
         rootView = MeasureHUDView(
-            pointCount: pointCount,
-            status:     status,
-            onAdd:      { [weak self] in self?.onAdd?() },
-            onUndo:     { [weak self] in self?.onUndo?() },
-            onClear:    { [weak self] in self?.onClear?() }
+            pointCount:   currentPointCount,
+            status:       currentStatus,
+            currentUnit:  currentUnit,
+            onAdd:        { [weak self] in self?.onAdd?() },
+            onUndo:       { [weak self] in self?.onUndo?() },
+            onClear:      { [weak self] in self?.onClear?() },
+            onUnitChange: { [weak self] unit in self?.onUnitChange?(unit) }
         )
     }
 }
