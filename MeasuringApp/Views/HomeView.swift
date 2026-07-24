@@ -2,8 +2,7 @@ import AVFoundation
 import SwiftUI
 import RealityKit
 import SwiftData
-import PhotosUI // 1. Added PhotosUI for modern image picking
-
+import PhotosUI
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ScannedObject.scanDate, order: .reverse) private var scannedObjects: [ScannedObject]
@@ -186,6 +185,8 @@ struct HomeView: View {
                             )
                             .onTapGesture {
                                 selectedObject = object
+                            }.onLongPressGesture{
+                                deleteObject(object)
                             }
                         }
                     }
@@ -271,6 +272,15 @@ struct HomeView: View {
             }
         } message: {
             Text("How would you like to be greeted?")
+        }
+    }
+    func deleteObject(_ object: ScannedObject) {
+        modelContext.delete(object)
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to save context after deletion: \(error)")
         }
     }
 }
